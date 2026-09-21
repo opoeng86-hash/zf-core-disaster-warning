@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(const ZfCoreApp());
@@ -33,12 +35,15 @@ class DisasterDashboard extends StatefulWidget {
 class _DisasterDashboardState extends State<DisasterDashboard> {
   late Timer _timer;
   String _currentTime = '';
+  String _liveApiStatus = 'Menghubungkan ke jalur data live...';
+  bool _isLoadingApi = false;
 
   @override
   void initState() {
     super.initState();
     _updateTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) => _updateTime());
+    _fetchRealtimeData(); // Memanggil data real-time saat aplikasi dibuka
   }
 
   void _updateTime() {
@@ -46,6 +51,46 @@ class _DisasterDashboardState extends State<DisasterDashboard> {
     setState(() {
       _currentTime = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')} WIB";
     });
+  }
+
+  // Fungsi untuk menarik data gempa real-time dari API publik terbuka (USGS)
+  Future<void> _fetchRealtimeData() async {
+    setState(() {
+      _isLoadingApi = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_hour.geojson'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final features = data['features'] as List;
+        
+        setState(() {
+          if (features.isNotEmpty) {
+            final latest = features[0]['properties'];
+            final place = latest['place'] ?? 'Lokasi tidak diketahui';
+            final mag = latest['mag'] ?? '0';
+            _liveApiStatus = 'STATUS LIVE: Terdeteksi aktivitas M$mag di $place';
+          } else {
+            _liveApiStatus = 'STATUS LIVE: Zona stabil. Tidak ada anomali signifikan detik ini.';
+          }
+          _isLoadingApi = false;
+        });
+      } else {
+        setState(() {
+          _liveApiStatus = 'STATUS LIVE: Gagal merespons jalur data.';
+          _isLoadingApi = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _liveApiStatus = 'STATUS LIVE: Mode offline / Jaringan terbatas.';
+        _isLoadingApi = false;
+      });
+    }
   }
 
   @override
@@ -60,7 +105,7 @@ class _DisasterDashboardState extends State<DisasterDashboard> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
         title: const Text("Broadcast Komando Darurat", style: TextStyle(color: Colors.redAccent)),
-        content: const Text("Sinyal komando ZF-Core berhasil disiarkan ke seluruh sektor wilayah siaga."),
+        content: const Text("Sinyal komando ZF-Core berhasil disiarkan ke seluruh sektor wilayah siaga berbasis Zuhri Formalism."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -78,6 +123,13 @@ class _DisasterDashboardState extends State<DisasterDashboard> {
         title: const Text('ZF-Core Disaster Warning'),
         backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _fetchRealtimeData,
+            tooltip: 'Segarkan Data Live',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -101,11 +153,11 @@ class _DisasterDashboardState extends State<DisasterDashboard> {
             ),
             const SizedBox(height: 16),
 
-            // STATUS PANEL
+            // LIVE API STATUS PANEL
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.orangeAccent),
+                border: Border.all(color: Colors.cyanAccent),
                 borderRadius: BorderRadius.circular(12),
                 color: const Color(0xFF1E293B),
               ),
@@ -115,13 +167,34 @@ class _DisasterDashboardState extends State<DisasterDashboard> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text("LEVEL 2: SIAGA TERBATAS", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
-                      Text(_currentTime, style: const TextStyle(color: Colors.white70)),
+                      const Text("FEED API REAL-TIME", style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text(_currentTime, style: const TextStyle(color: Colors.white70, fontSize: 12)),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Text("NUSANTARA: WASPADA ANOMALI MUSIM", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  const Text("GLOBAL: TERMONITOR STABIL (Kardashev Simpul A)", style: TextStyle(color: Colors.white60, fontSize: 12)),
+                  _isLoadingApi
+                      ? const LinearProgressIndicator(color: Colors.cyanAccent)
+                      : Text(_liveApiStatus, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 13)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // STATUS PANEL UTAMA
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.orangeAccent),
+                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFF1E293B),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("LEVEL 2: SIAGA TERBATAS", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 8),
+                  Text("NUSANTARA: WASPADA ANOMALI MUSIM", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  Text("GLOBAL: TERMONITOR STABIL (Kardashev Simpul A)", style: TextStyle(color: Colors.white60, fontSize: 12)),
                 ],
               ),
             ),
